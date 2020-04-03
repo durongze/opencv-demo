@@ -7,9 +7,129 @@
 #include <fstream>
 #include <iostream>
 #include <windows.h>
+#include <strsafe.h>
 
-#include <map>
-#include <vector>
+using namespace std;
+using namespace cv;
+
+struct rect_data{
+    int x;
+    int y;
+    int w;
+    int h;
+    float weight;
+};
+
+static void printLimits(){
+    cerr << "Limits of the current interface:" << endl;
+    cerr << " - Only handles cascade classifier models, trained with the opencv_traincascade tool, containing stumps as decision trees [default settings]." << endl;
+    cerr << " - The image provided needs to be a sample window with the original model dimensions, passed to the --image parameter." << endl;
+    cerr << " - ONLY handles HAAR and LBP features." << endl;
+}
+
+BOOL CALLBACK EnumFamCallBack(LPLOGFONT lplf, LPNEWTEXTMETRIC lpntm, DWORD FontType, LPVOID aFontCount)
+{
+	int far * aiFontCount = (int far *) aFontCount;
+
+	// Record the number of raster, TrueType, and vector  
+	// fonts in the font-count array.  
+	
+	if (FontType & RASTER_FONTTYPE) {
+		aiFontCount[0]++;
+		std::cout << "1." << lplf->lfFaceName << std::endl;
+	}
+	else if (FontType & TRUETYPE_FONTTYPE) {
+		aiFontCount[2]++;
+		std::cout << "2." << lplf->lfFaceName << std::endl;
+	}
+	else {
+		aiFontCount[1]++;
+		std::cout << "3." << lplf->lfFaceName << std::endl;
+	}
+	if (aiFontCount[0] || aiFontCount[1] || aiFontCount[2])
+		return TRUE;
+	else
+		return FALSE;
+
+	UNREFERENCED_PARAMETER(lplf);
+	UNREFERENCED_PARAMETER(lpntm);
+}
+
+int GetAllFont(int fontIdx, char *faceName, int faceNameLen)
+{
+	UINT uAlignPrev;
+	char szCount[8];
+	HRESULT hr;
+	size_t  pcch;
+	int aFontCount[] = { 0, 0, 0 };
+	memset(faceName, 0, faceNameLen * sizeof(char));
+	HDC hdc = CreateCompatibleDC(0);
+	EnumFontFamilies(hdc, (LPCTSTR)NULL, (FONTENUMPROC)EnumFamCallBack, (LPARAM)aFontCount);
+
+	uAlignPrev = SetTextAlign(hdc, TA_UPDATECP);
+
+	MoveToEx(hdc, 10, 50, (LPPOINT)NULL);
+	TextOut(hdc, 0, 0, "Number of raster fonts: ", 24);
+	itoa(aFontCount[0], szCount, 10);
+
+	hr = StringCchLength(szCount, 9, &pcch);
+	if (FAILED(hr))
+	{
+		// TODO: write error handler 
+	}
+	TextOut(hdc, 0, 0, szCount, pcch);
+
+	MoveToEx(hdc, 10, 75, (LPPOINT)NULL);
+	TextOut(hdc, 0, 0, "Number of vector fonts: ", 24);
+	itoa(aFontCount[1], szCount, 10);
+	hr = StringCchLength(szCount, 9, &pcch);
+	if (FAILED(hr))
+	{
+		// TODO: write error handler 
+	}
+	TextOut(hdc, 0, 0, szCount, pcch);
+
+	MoveToEx(hdc, 10, 100, (LPPOINT)NULL);
+	TextOut(hdc, 0, 0, "Number of TrueType fonts: ", 26);
+	itoa(aFontCount[2], szCount, 10);
+	hr = StringCchLength(szCount, 9, &pcch);
+	if (FAILED(hr))
+	{
+		// TODO: write error handler 
+	}
+	TextOut(hdc, 0, 0, szCount, pcch);
+
+	SetTextAlign(hdc, uAlignPrev);
+	return 0;
+}
+
+void Wchar_tToString(std::string& szDst, wchar_t *wchar)
+{
+	// psText为char*的临时数组，作为赋值给std::string的中间变量
+	char *psText; 
+	wchar_t * wText = wchar;
+	// WideCharToMultiByte的运用
+	DWORD dwNum = WideCharToMultiByte(CP_OEMCP, NULL, wText, -1, NULL, 0, NULL, FALSE);
+	psText = new char[dwNum];
+	// WideCharToMultiByte的再次运用
+	WideCharToMultiByte(CP_OEMCP, NULL, wText, -1, psText, dwNum, NULL, FALSE);
+	// std::string赋值
+	szDst = psText; 
+	delete[]psText; 
+}
+
+void TextToVcString(std::wstring text, std::vector<std::string>& content)
+{
+	wchar_t arrWord[2] = { 0 };
+	for (int i = 0; i < text.length(); i++)
+	{
+		string word;
+		arrWord[0] = text.at(i);
+		arrWord[1] = '\0';
+		Wchar_tToString(word, arrWord);
+		content.push_back(word);
+	}
+}
 
 void GetStringSize(HDC hDC, const char* str, int* w, int* h)
 {
@@ -42,8 +162,11 @@ void putTextZH(Mat &dst, const char* str, Point org, Scalar color, int fontSize,
 	lf.lfClipPrecision = 0;
 	lf.lfQuality = PROOF_QUALITY;
 	lf.lfPitchAndFamily = 0;
+	int fontIdx = 1;
+	char faceName[32];
+	GetAllFont(fontIdx, faceName, sizeof(faceName) / sizeof(faceName[0]));
+	// strcpy_s(lf.lfFaceName, faceName);
 	strcpy_s(lf.lfFaceName, fn);
-
 	HFONT hf = CreateFontIndirectA(&lf);
 	HDC hDC = CreateCompatibleDC(0);
 	HFONT hOldFont = (HFONT)SelectObject(hDC, hf);
@@ -147,6 +270,9 @@ void putTextZH(Mat &dst, const char* str, Point org, Scalar color, int fontSize,
 	DeleteDC(hDC);
 }
 
+#include <map>
+#include <vector>
+
 int frame_main(VideoWriter& writer, std::map<int, std::vector<std::string> >& text)
 {
 	int i, j;
@@ -160,14 +286,22 @@ int frame_main(VideoWriter& writer, std::map<int, std::vector<std::string> >& te
 	{
 		for (j = 0, vcIter = mapIter->second.begin(); vcIter != mapIter->second.end(); ++vcIter, ++j)
 		{
-			// Point pos((j + 1) * 30, (i + 1) * 30); // 横写
-			// Point pos((i + 1) * 30, (j + 1) * 30); // 竖写
-			// Point pos((i + 1) * 30, (mapIter->second.size() - j) * 30); // 逆古书
-			Point pos((text.size() - i) * (32) + 800, (j + 1) * 32); // 古书
-			// putText(window, vcIter->c_str(), pos, FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255));
-			putTextZH(window, vcIter->c_str(), pos, Scalar(0, 255, 0), 28, "宋体", true, true);
-			imwrite(imgPath + std::to_string(i) + "_" + std::to_string(j) + ".jpg", window);
-			writer << window;
+			if (vcIter->length() > 0) {
+				// Point pos((j + 1) * 30, (i + 1) * 30); // 横写
+				// Point pos((i + 1) * 30, (j + 1) * 30); // 竖写
+				// Point pos((i + 1) * 30, (mapIter->second.size() - j) * 30); // 逆古书
+				Point pos((text.size() - i) * (32) + 800, (j + 1) * 32); // 古书
+				// putText(window, vcIter->c_str(), pos, FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255));
+				putTextZH(window, vcIter->c_str(), pos, Scalar(255, 255, 255), 28, "隶书", false, true);
+				putTextZH(window, "|", Point(955, 588), Scalar(255, 255, 255), 18, "宋体", false, false);
+				putTextZH(window, "|", Point(955, 608), Scalar(255, 255, 255), 18, "宋体", false, false);
+				putTextZH(window, "麦", Point(950, 628), Scalar(255, 255, 255), 18, "宋体", true, true);
+				putTextZH(window, "思", Point(950, 648), Scalar(255, 255, 255), 18, "宋体", true, true);
+				// putTextZH(window, "【深】", Point(940, 668), Scalar(255, 255, 255), 18, "宋体", true, true);
+				// putTextZH(window, "【圳】", Point(940, 688), Scalar(255, 255, 255), 18, "宋体", true, true);
+				imwrite(imgPath + std::to_string(i) + "_" + std::to_string(j) + ".jpg", window);
+				writer << window;
+			}
 		}
 	}
 
@@ -198,89 +332,19 @@ int fmt_text(std::vector<std::string>& content, int row, int col, std::map<int, 
 
 int gen_content(std::vector<std::string>& content)
 {
-	content.push_back("昨");
-	content.push_back("天");
-	content.push_back("是");
-	content.push_back("20");
-	content.push_back("年");
-	content.push_back("04");
-	content.push_back("月");
-	content.push_back("01");
-	content.push_back("日");
-	content.push_back("，");
-	content.push_back("天");
-	content.push_back("快");
-	content.push_back("亮");
-	content.push_back("时");
-	content.push_back("，");
-	content.push_back("我");
-	content.push_back("做");
-	content.push_back("了");
-	content.push_back("个");
-	content.push_back("梦");
-	content.push_back("，");
-	content.push_back("梦");
-	content.push_back("到");
-	content.push_back("中");
-	content.push_back("学");
-	content.push_back("里");
-	content.push_back("的");
-	content.push_back("场");
-	content.push_back("景");
-	content.push_back("，");
-	content.push_back("醒");
-	content.push_back("来");
-	content.push_back("时");
-	content.push_back("有");
-	content.push_back("些");
-	content.push_back("心");
-	content.push_back("痛");
-	content.push_back("，");
-	content.push_back("任");
-	content.push_back("何");
-	content.push_back("努");
-	content.push_back("力");
-	content.push_back("都");
-	content.push_back("要");
-	content.push_back("在");
-	content.push_back("正");
-	content.push_back("确");
-	content.push_back("的");
-	content.push_back("时");
-	content.push_back("间");
-	content.push_back("，");
-	content.push_back("如");
-	content.push_back("今");
-	content.push_back("时");
-	content.push_back("间");
-	content.push_back("错");
-	content.push_back("了");
-	content.push_back("，");
-	content.push_back("梦");
-	content.push_back("想");
-	content.push_back("就");
-	content.push_back("这");
-	content.push_back("样");
-	content.push_back("永");
-	content.push_back("远");
-	content.push_back("成");
-	content.push_back("了");
-	content.push_back("梦");
-	content.push_back("想");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
-	content.push_back("！");
+	std::wstring text = L"今天是公元二零二零年四月四日，近三个月的禁闭终于结束！清明了，给病毒烧点纸............";
+	TextToVcString(text, content);
 	return 0;
 }
 
+//    V_FOURCC('P','I','M','1')     = MPEG-1 codec
+//    CV_FOURCC('M','J','P','G')    = motion-jpeg codec (does not work well)
+//    CV_FOURCC('M', 'P', '4', '2') = MPEG-4.2 codec
+//    CV_FOURCC('D', 'I', 'V', '3') = MPEG-4.3 codec
+//    CV_FOURCC('D', 'I', 'V', 'X') = MPEG-4 codec
+//    CV_FOURCC('U', '2', '6', '3') = H263 codec
+//    CV_FOURCC('I', '2', '6', '3') = H263I codec
+//    CV_FOURCC('F', 'L', 'V', '1') = FLV1 codec							    
 int video_main()
 {
 	int resize_factor = 10;
