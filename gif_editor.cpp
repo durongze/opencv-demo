@@ -366,3 +366,57 @@ int video_main()
 	writer.release();
 	return 0;
 }
+
+class ScreenCapture {
+	/*  */
+	HBITMAP hBitmap;
+	HDC hDDC;
+	HDC hCDC;
+	int nWidth, nHeight;
+	int iFwrite;
+public:
+	ScreenCapture()
+	{
+		hBitmap = NULL;
+		hDDC = NULL;
+		hCDC = NULL;
+		nWidth = 1024;
+		nHeight = 768;
+		iFwrite = 200;
+	}
+
+	Mat GdiScreenCapture() {
+		hBitmap = CreateCompatibleBitmap(hDDC, nWidth, nHeight); // 得到位图    
+		SelectObject(hCDC, hBitmap); // 好像总得这么写。             
+		BitBlt(hCDC, 0, 0, nWidth, nHeight, hDDC, 0, 0, SRCCOPY);
+		Mat dst;
+		dst.create(cv::Size(nWidth, nHeight), CV_8UC4);
+		GetBitmapBits(hBitmap, nWidth*nHeight * 4, dst.data);
+		cvtColor(dst, dst, COLOR_BGRA2BGR);
+		return dst;
+	}
+
+	void SaveVideo(int iFwrite)
+	{
+		int iFrame = 1;
+		nWidth = GetSystemMetrics(SM_CXSCREEN);//得到屏幕的分辨率的x    
+		nHeight = GetSystemMetrics(SM_CYSCREEN);//得到屏幕分辨率的y    
+		hDDC = GetDC(GetDesktopWindow());//得到屏幕的dc    
+		hCDC = CreateCompatibleDC(hDDC);//    
+		Mat img = GdiScreenCapture();
+		VideoWriter vw;
+		// vw.open("screen.avi", VideoWriter::fourcc('M', 'P', '4', '2'), 25, cv::Size(img.cols, img.rows));
+		vw.open("screen.avi", VideoWriter::fourcc('M', 'J', 'P', 'G'), 5, Size(nWidth, nHeight), true);
+		while (iFwrite > iFrame++)
+		{
+			img = GdiScreenCapture();
+			waitKey(25);
+			if (!img.data)
+				return;
+			vw << img;
+			// imshow("view", img);
+		}
+		vw.release();
+	}
+};
+
